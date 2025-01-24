@@ -1,9 +1,12 @@
+from __future__ import annotations
+
+import sys
 from unittest import mock
 
 import pytest
 
 import env
-from pybind11_tests import ConstructorStats, UserType
+from pybind11_tests import PYBIND11_REFCNT_IMMORTAL, ConstructorStats, UserType
 from pybind11_tests import class_ as m
 
 
@@ -25,6 +28,9 @@ def test_instance(msg):
 
     instance = m.NoConstructor.new_instance()
 
+    if env.GRAALPY:
+        pytest.skip("ConstructorStats is incompatible with GraalPy.")
+
     cstats = ConstructorStats.get(m.NoConstructor)
     assert cstats.alive() == 1
     del instance
@@ -33,6 +39,10 @@ def test_instance(msg):
 
 def test_instance_new():
     instance = m.NoConstructorNew()  # .__new__(m.NoConstructor.__class__)
+
+    if env.GRAALPY:
+        pytest.skip("ConstructorStats is incompatible with GraalPy.")
+
     cstats = ConstructorStats.get(m.NoConstructorNew)
     assert cstats.alive() == 1
     del instance
@@ -359,7 +369,7 @@ def test_brace_initialization():
     assert b.vec == [123, 456]
 
 
-@pytest.mark.xfail("env.PYPY")
+@pytest.mark.xfail("env.PYPY or env.GRAALPY")
 def test_class_refcount():
     """Instances must correctly increase/decrease the reference count of their types (#1029)"""
     from sys import getrefcount
@@ -377,7 +387,9 @@ def test_class_refcount():
         refcount_3 = getrefcount(cls)
 
         assert refcount_1 == refcount_3
-        assert refcount_2 > refcount_1
+        assert (refcount_2 > refcount_1) or (
+            refcount_2 == refcount_1 == PYBIND11_REFCNT_IMMORTAL
+        )
 
 
 def test_reentrant_implicit_conversion_failure(msg):
@@ -497,3 +509,31 @@ def test_pr4220_tripped_over_this():
         m.Empty0().get_msg()
         == "This is really only meant to exercise successful compilation."
     )
+
+
+@pytest.mark.skipif(sys.platform.startswith("emscripten"), reason="Requires threads")
+def test_all_type_info_multithreaded():
+    # See PR #5419 for background.
+    import threading
+
+    from pybind11_tests import TestContext
+
+    class Context(TestContext):
+        pass
+
+    num_runs = 10
+    num_threads = 4
+    barrier = threading.Barrier(num_threads)
+
+    def func():
+        barrier.wait()
+        with Context():
+            pass
+
+    for _ in range(num_runs):
+        threads = [threading.Thread(target=func) for _ in range(num_threads)]
+        for thread in threads:
+            thread.start()
+
+        for thread in threads:
+            thread.join()

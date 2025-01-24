@@ -32,6 +32,8 @@ issues = (issue for page in issues_pages for issue in page)
 missing = []
 cats_descr = {
     "feat": "New Features",
+    "feat(types)": "",
+    "feat(cmake)": "",
     "fix": "Bug fixes",
     "fix(types)": "",
     "fix(cmake)": "",
@@ -57,9 +59,9 @@ for issue in issues:
             msg += "."
 
         msg += f"\n  `#{issue.number} <{issue.html_url}>`_"
-        for cat in cats:
+        for cat, cat_list in cats.items():
             if issue.title.lower().startswith(f"{cat}:"):
-                cats[cat].append(msg)
+                cat_list.append(msg)
                 break
         else:
             cats["unknown"].append(msg)
@@ -67,9 +69,11 @@ for issue in issues:
 for cat, msgs in cats.items():
     if msgs:
         desc = cats_descr[cat]
-        print(f"[bold]{desc}:\n" if desc else "")
+        print(f"[bold]{desc}:" if desc else f".. {cat}")
+        print()
         for msg in msgs:
             print(Syntax(msg, "rst", theme="ansi_light", word_wrap=True))
+            print()
         print()
 
 if missing:

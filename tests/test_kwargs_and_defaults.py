@@ -1,5 +1,8 @@
+from __future__ import annotations
+
 import pytest
 
+import env  # noqa: F401
 from pybind11_tests import kwargs_and_defaults as m
 
 
@@ -14,6 +17,10 @@ def test_function_signatures(doc):
     assert doc(m.args_function) == "args_function(*args) -> tuple"
     assert (
         doc(m.args_kwargs_function) == "args_kwargs_function(*args, **kwargs) -> tuple"
+    )
+    assert (
+        doc(m.args_kwargs_subclass_function)
+        == "args_kwargs_subclass_function(*args: str, **kwargs: str) -> tuple"
     )
     assert (
         doc(m.KWClass.foo0)
@@ -96,6 +103,7 @@ def test_arg_and_kwargs():
     args = "a1", "a2"
     kwargs = {"arg3": "a3", "arg4": 4}
     assert m.args_kwargs_function(*args, **kwargs) == (args, kwargs)
+    assert m.args_kwargs_subclass_function(*args, **kwargs) == (args, kwargs)
 
 
 def test_mixed_args_and_kwargs(msg):
@@ -376,12 +384,13 @@ def test_signatures():
     )
 
 
+@pytest.mark.skipif("env.GRAALPY", reason="Different refcounting mechanism")
 def test_args_refcount():
     """Issue/PR #1216 - py::args elements get double-inc_ref()ed when combined with regular
     arguments"""
     refcount = m.arg_refcount_h
 
-    myval = 54321
+    myval = object()
     expected = refcount(myval)
     assert m.arg_refcount_h(myval) == expected
     assert m.arg_refcount_o(myval) == expected + 1
@@ -411,6 +420,12 @@ def test_args_refcount():
     )
     assert refcount(myval) == expected
 
+    assert m.args_kwargs_subclass_function(7, 8, myval, a=1, b=myval) == (
+        (7, 8, myval),
+        {"a": 1, "b": myval},
+    )
+    assert refcount(myval) == expected
+
     exp3 = refcount(myval, myval, myval)
     assert m.args_refcount(myval, myval, myval) == (exp3, exp3, exp3)
     assert refcount(myval) == expected
@@ -420,6 +435,7 @@ def test_args_refcount():
     # for the `py::args`; in the previous case, we could simply inc_ref and pass on Python's input
     # tuple without having to inc_ref the individual elements, but here we can't, hence the extra
     # refs.
-    assert m.mixed_args_refcount(myval, myval, myval) == (exp3 + 3, exp3 + 3, exp3 + 3)
+    exp3_3 = exp3 + 3
+    assert m.mixed_args_refcount(myval, myval, myval) == (exp3_3, exp3_3, exp3_3)
 
     assert m.class_default_argument() == "<class 'decimal.Decimal'>"
